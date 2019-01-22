@@ -1,0 +1,23 @@
+name: rest-service
+version: "v0.0.1"
+author: Mikhail Pogretskiy <mikhail.pogretskiy@gmail.com>
+about: TODO
+settings:
+    - ColorAuto
+    - ColoredHelp
+    - DeriveDisplayOrder
+    - DisableHelpSubcommand
+    - VersionlessSubcommands
+
+args:
+    - verbose:
+        short: v
+        long: verbose
+        multiple: true
+        help: Sets the level of verbosity
+
+    - quiet:
+        short: q
+        long: quiet
+        conflicts_with: verbose
+        help: Disables all logging

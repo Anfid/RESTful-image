@@ -1,0 +1,20 @@
+[package]
+name = "RESTful-image"
+version = "0.1.0"
+authors = ["Mikhail Pogretskiy <mikhail.pogretskiy@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+base64 = "*"
+bodyparser = "*"
+chrono = { version = "*", features = ["serde"] }
+clap  = { version = "*", features = ["yaml"] }
+diesel = { version = "1.0.0", features = ["postgres", "chrono"] }
+iron = "*"
+log = "*"
+router = "*"
+serde = "*"
+serde_derive = "*"
+serde_json = "*"
+stderrlog = "*"
+url = "*"

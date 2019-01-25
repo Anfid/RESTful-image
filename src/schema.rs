@@ -1,8 +1,9 @@
 table! {
-    pictures (name) {
+    pictures (id) {
+        id -> Int8,
         name -> Text,
+        image -> Text,
         created_at -> Timestamp,
-        filepath -> Nullable<Text>,
         description -> Nullable<Text>,
     }
 }

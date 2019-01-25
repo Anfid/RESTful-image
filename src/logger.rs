@@ -2,7 +2,7 @@ use clap::load_yaml;
 use clap::App;
 use stderrlog;
 
-pub fn init() -> Configuration {
+pub fn init() {
     let yaml = load_yaml!("args.yaml");
     let matches = App::from_yaml(yaml).get_matches();
     let verbosity = match matches.occurrences_of("verbose") {

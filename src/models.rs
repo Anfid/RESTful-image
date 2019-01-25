@@ -6,15 +6,16 @@ use chrono::naive::NaiveDateTime;
 #[table_name = "pictures"]
 pub struct PictureNew {
     pub name: String,
-    pub filepath: String,
+    pub image: String,
     pub description: Option<String>,
 }
 
-/// Picture entry model that has full representation of the picture. Only for server internal usage.
-#[derive(Debug, Queryable)]
+/// Picture entry model that has full representation of the picture.
+#[derive(Debug, Queryable, Serialize, Deserialize)]
 pub struct Picture {
+    pub id: i64,
     pub name: String,
-    pub filepath: String,
+    pub image: String,
     pub created_at: NaiveDateTime,
     pub description: Option<String>,
 }

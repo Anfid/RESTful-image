@@ -2,6 +2,7 @@ use crate::db::Database;
 use crate::models::PictureNew;
 use bodyparser;
 use iron::{status, Handler, IronResult, Request, Response};
+use multipart::server::{Entries, Multipart, MultipartField, ReadEntry, SaveResult};
 use serde_json;
 
 /// Handler for POST /pictures
@@ -11,32 +12,31 @@ pub struct PostHandler {
 
 impl Handler for PostHandler {
     fn handle(&self, req: &mut Request) -> IronResult<Response> {
-        //let url: Url = req.url.clone().into();
-        let has_type = req.headers.has::<iron::headers::ContentType>();
-        log::info!("Has type: {}", has_type);
+        if let Some(t) = req.headers.get::<iron::headers::ContentType>() {
+            if t == &iron::headers::ContentType::json() {
+                log::debug!("Received request Content-Type: application/json");
 
-        if !has_type {
-            return Ok(Response::with((status::BadRequest, "/*TODO*/")));
-        }
+                PostHandler::handle_json(req);
+            } else if let Ok(mut multipart) = Multipart::from_request(req) {
+                log::debug!("Received request Content-Type: multipart/form-data");
 
-        // TODO: cleanup this mess
-        let req_type = req
-            .headers
-            .get::<iron::headers::ContentType>()
-            .expect("Unspecified Content-Type");
+                match PostHandler::handle_multipart(&mut multipart) {
+                    Ok(result) => return Ok(Response::with((status::Created, result))),
+                    Err(e) => return Ok(Response::with((status::InternalServerError, e))),
+                }
+            } else {
+                log::info!("Received request Content-Type unsupported");
 
-        use iron::mime::*;
-        if req_type == &iron::headers::ContentType::json() {
-            log::info!("Header type: application/json");
-            post_from_base64(req)
-        } else if req_type
-            == &iron::headers::ContentType(Mime(TopLevel::Multipart, SubLevel::FormData, vec![]))
-        {
-            log::info!("Header type: multipart/form-data");
-            post_from_raw(req)
+                return Ok(Response::with((
+                    status::BadRequest,
+                    "Unsupported Content-Type",
+                )));
+            }
         } else {
-            log::error!("Header type unknown");
-            return Ok(Response::with((status::BadRequest, "/*TODO*/")));
+            return Ok(Response::with((
+                status::BadRequest,
+                "Requests with unspecified Content-Type are not supported",
+            )));
         }
 
         let picture = PictureNew {
@@ -58,17 +58,32 @@ impl Handler for PostHandler {
     }
 }
 
-fn post_from_base64(_req: &mut Request) {
-    unimplemented!()
-}
+impl PostHandler {
+    fn handle_json(_req: &mut Request) {
+        unimplemented!()
+    }
 
-fn post_from_raw(req: &mut Request) {
-    match multipart::server::Multipart::from_request(req)
-        .expect("from raw 1")
-        .into_entry()
-    {
-        multipart::server::ReadEntryResult::Entry(e) => log::info!("Entry"),
-        multipart::server::ReadEntryResult::End(m) => log::info!("End"),
-        multipart::server::ReadEntryResult::Error(m, e) => log::info!("Error"),
+    fn handle_multipart(multipart: &mut Multipart<impl std::io::Read>) -> Result<String, String> {
+        use multipart::server::save::SavedData::*;
+        if let SaveResult::Full(entries) = multipart.save().temp() {
+            for (k, v) in entries.fields.iter() {
+                print!("{}: ", k);
+                for val in v {
+                    match &val.data {
+                        Text(t) => println!("{}", t),
+                        Bytes(b) => println!("{:?}", b),
+                        File(p, s) => println!("{:?} {} KB", p, s / 1024),
+                    }
+                }
+            }
+            Ok("".to_owned())
+        } else {
+            // TODO: Consider return code
+            Err("/*TODO*/".to_owned())
+        }
+    }
+
+    fn save(_pic: &PictureNew) -> Result<(), ()> {
+        unimplemented!()
     }
 }

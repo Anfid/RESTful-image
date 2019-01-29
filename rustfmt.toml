@@ -1,0 +1,9 @@
+format_strings = true
+merge_imports = true
+match_block_trailing_comma = true
+report_todo = "Always"
+report_fixme = "Always"
+use_field_init_shorthand = true
+wrap_comments = true
+unstable_features = true
+edition = "2018"

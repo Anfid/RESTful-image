@@ -8,9 +8,9 @@ use diesel::prelude::*;
 use diesel::r2d2::{ConnectionManager, Pool};
 use std::error::Error;
 
-pub enum Query {
+pub enum Query<'a> {
     Select(Option<String>),
-    Insert(PictureNew),
+    Insert(PictureNew<'a>),
     Delete(String),
 }
 

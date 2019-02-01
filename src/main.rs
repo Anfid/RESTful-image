@@ -11,10 +11,8 @@ mod models;
 mod schema;
 mod server;
 
-use crate::db::Database;
-
 fn main() {
     logger::init();
 
-    server::serve(Database::init());
+    server::serve();
 }

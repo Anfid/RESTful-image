@@ -4,10 +4,10 @@ use chrono::naive::NaiveDateTime;
 /// Picture entry model to insert new row into the database.
 #[derive(Debug, Insertable, Serialize, Deserialize)]
 #[table_name = "pictures"]
-pub struct PictureNew {
-    pub name: String,
-    pub image: String,
-    pub description: Option<String>,
+pub struct PictureNew<'a> {
+    pub name: &'a str,
+    pub image: &'a str,
+    pub description: Option<&'a str>,
 }
 
 /// Picture entry model that has full representation of the picture.

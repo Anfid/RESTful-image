@@ -10,6 +10,8 @@ base64 = "*"
 chrono = { version = "*", features = ["serde"] }
 clap  = { version = "*", features = ["yaml"] }
 diesel = { version = "1.0.0", features = ["postgres", "chrono", "r2d2"] }
+futures = "*"
+listenfd = "*"
 log = "*"
 serde = "*"
 serde_derive = "*"

@@ -2,11 +2,13 @@
 
 use crate::models::*;
 use crate::schema::*;
-use diesel;
-use diesel::pg::PgConnection;
-use diesel::prelude::*;
-use diesel::r2d2::{ConnectionManager, Pool};
-use std::error::Error;
+use actix::prelude::*;
+use actix_web::{error, Error};
+use diesel::{
+    pg::PgConnection,
+    prelude::*,
+    r2d2::{ConnectionManager, Pool},
+};
 
 pub enum Query<'a> {
     Select(Option<String>),
@@ -15,42 +17,71 @@ pub enum Query<'a> {
 }
 
 #[derive(Clone)]
-pub struct Database {
+pub struct DbExecutor {
     pool: Pool<ConnectionManager<PgConnection>>,
 }
 
-impl Database {
-    /// Initializes database (TODO with supplied parameters).
-    pub fn init() -> Database {
-        let manager: ConnectionManager<PgConnection> =
-            diesel::r2d2::ConnectionManager::new("postgres://postgres:postgres@localhost");
+impl Actor for DbExecutor {
+    type Context = SyncContext<Self>;
+}
 
-        let pool = diesel::r2d2::Pool::builder()
-            .max_size(15)
+pub struct PictureCreate {
+    pub name: String,
+    pub image: String,
+}
+
+impl Message for PictureCreate {
+    type Result = Result<Picture, Error>;
+}
+
+impl Handler<PictureCreate> for DbExecutor {
+    type Result = Result<Picture, Error>;
+
+    fn handle(&mut self, msg: PictureCreate, _: &mut Self::Context) -> Self::Result {
+        let pic_model = PictureNew {
+            name: &msg.name,
+            image: &msg.image,
+        };
+        self.insert(pic_model).map_err(|e| {
+            log::error!("Error saving image: {}", e);
+            error::ErrorInternalServerError("Could not save the image")
+        })
+    }
+}
+
+impl DbExecutor {
+    /// Initializes database (TODO with supplied parameters).
+    pub fn init() -> Addr<DbExecutor> {
+        let manager: ConnectionManager<PgConnection> =
+            ConnectionManager::new("postgres://postgres:postgres@localhost");
+
+        let pool = Pool::builder()
             .build(manager)
-            .unwrap();
+            .expect("Failed to create pool");
+
+        let addr = SyncArbiter::start(4, move || DbExecutor { pool: pool.clone() });
 
         log::debug!("Database connection established");
-
-        Database { pool }
+        addr
     }
 
+    // TODO: cleanup
     /// Used only for cli or debugging purposes. Prints query result to stdout
     pub fn query(&self, query: Query) {
-        match query {
-            Query::Select(name) => {
-                let result = self.select(name);
-                println!("{:?}", result);
-            }
-            Query::Insert(picture) => match self.insert(picture) {
-                Ok(picture) => println!("Created picture: {:?}", picture),
-                Err(e) => println!("Could not create picture: {}", e.description()),
-            },
-            Query::Delete(name) => match self.delete(name.as_str()) {
-                Ok(picture) => println!("Deleted picture '{:?}'", picture),
-                Err(e) => println!("Could not delete picture: '{}'", e.description()),
-            },
-        }
+        //match query {
+        //Query::Select(name) => {
+        //let result = self.select(name);
+        //println!("{:?}", result);
+        //}
+        //Query::Insert(picture) => match self.insert(picture) {
+        //Ok(picture) => println!("Created picture: {:?}", picture),
+        //Err(e) => println!("Could not create picture: {}", e.description()),
+        //},
+        //Query::Delete(name) => match self.delete(name.as_str()) {
+        //Ok(picture) => println!("Deleted picture '{:?}'", picture),
+        //Err(e) => println!("Could not delete picture: '{}'", e.description()),
+        //},
+        //}
     }
 
     pub fn get_picture(&self, name: &str) -> Option<Picture> {

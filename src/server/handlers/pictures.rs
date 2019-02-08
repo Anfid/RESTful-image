@@ -1,47 +1,50 @@
-use crate::db::Database;
-use crate::models::{Picture, PictureNew};
-use actix_web::{
-    dev, error, multipart::MultipartItem, Error, FutureResponse, HttpMessage, HttpRequest,
-    HttpResponse, Responder,
-};
-use futures::{future::Future, Stream};
+use crate::db::{DbExecutor, PictureCreate};
+use crate::models::Picture;
+use crate::server::AppState;
+use actix::Addr;
+use actix_web::multipart::*;
+use actix_web::{dev, error, http, FutureResponse, HttpMessage, HttpRequest, HttpResponse};
+use futures::future::Future;
+use futures::*;
 use serde_json;
 
-/// Handler for POST /pictures
-pub fn post(req: &HttpRequest<Database>) -> impl Responder {
-    if !req.headers().contains_key("content-type") {
-        return HttpResponse::BadRequest()
-            .body("Requests with unspecified Content-Type are not supported");
+fn content_type_is_multipart(req: &HttpRequest<AppState>) -> bool {
+    match req.headers().get(http::header::CONTENT_TYPE) {
+        Some(t) => match t.to_str() {
+            Ok(t) => t.starts_with("multipart/form-data"),
+            Err(e) => {
+                log::error!("Error reading header: {}", e);
+                false
+            }
+        },
+        None => false,
     }
+}
 
-    let content_type = req
-        .headers()
-        .get("content-type")
-        .unwrap() // safe to unwrap, checked above
-        .to_str()
-        .expect("Unable to parse header content"); // TODO
-
-    if content_type.starts_with("multipart/form-data") {
+/// Handler for POST /pictures
+pub fn handle_multipart(req: &HttpRequest<AppState>) -> FutureResponse<HttpResponse> {
+    if content_type_is_multipart(req) {
         log::info!("multipart/form-data");
+        let db = req.state().db.clone();
         Box::new(
             req.multipart()
                 .map_err(actix_web::error::ErrorInternalServerError)
-                .map(handle_multipart_item)
+                .map(move |item| handle_multipart_item(db.clone(), item))
                 .flatten()
                 .collect()
-                .map(|sizes| HttpResponse::Ok().json(sizes))
+                .map(|pictures| HttpResponse::Created().json(pictures))
                 .map_err(|e| {
-                    println!("Failed: {}", e);
+                    log::error!("Failed: {}", e);
                     e
                 }),
         )
-    } else if content_type.starts_with("application/json") {
-        log::info!("application/json");
-        unimplemented!()
     } else {
-        return HttpResponse::BadRequest().body("Unsupported Content-Type");
+        Box::new(futures::future::ok(HttpResponse::BadRequest().body(
+            "Content-Type must be either application/json or multipart/form-data",
+        )))
     }
 
+    /*
     HttpResponse::Created().json(save(
         req.state(),
         PictureNew {
@@ -50,35 +53,50 @@ pub fn post(req: &HttpRequest<Database>) -> impl Responder {
             description: None,
         },
     ))
+    */
 }
 
 fn handle_multipart_item(
+    db: Addr<DbExecutor>,
     item: MultipartItem<dev::Payload>,
-) -> Box<Stream<Item = i64, Error = Error>> {
+) -> Box<Stream<Item = Picture, Error = actix_web::Error>> {
     log::info!("Handling multipart item");
     match item {
-        MultipartItem::Field(f) => {
+        MultipartItem::Field(field) => {
             log::info!("Field");
-            f.inspect(|i| println!("{:?}", i));
-            unimplemented!()
+
+            let result = field
+                .map_err(actix_web::error::ErrorInternalServerError)
+                .fold(Vec::new(), |acc, bytes| {
+                    let mut acc = acc;
+                    acc.extend(&bytes);
+                    future::ok::<_, actix_web::Error>(acc)
+                })
+                .and_then(move |bytes_vec| {
+                    db.send(PictureCreate {
+                        name: "1".to_owned(),
+                        image: base64::encode(&bytes_vec),
+                    })
+                    .from_err()
+                    .and_then(|send_result| match send_result {
+                        Ok(picture) => future::ok(picture),
+                        Err(err) => future::err(err),
+                    })
+                });
+
+            Box::new(result.into_stream())
         }
         MultipartItem::Nested(mp) => {
             log::info!("Nested");
             Box::new(
                 mp.map_err(error::ErrorInternalServerError)
-                    .map(handle_multipart_item)
+                    .map(move |item| handle_multipart_item(db.clone(), item))
                     .flatten(),
             )
         }
     }
 }
 
-fn save(db: &Database, pic: PictureNew) -> Result<Picture, String> {
-    match db.insert(pic) {
-        Ok(pic) => Ok(pic),
-        Err(e) => {
-            log::error!("{}", e);
-            Err("Error saving file".to_owned())
-        }
-    }
+pub fn handle_json() -> HttpResponse {
+    unimplemented!()
 }

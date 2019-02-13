@@ -8,6 +8,10 @@ use futures::future::Future;
 use futures::*;
 use serde_json;
 
+const MAX_SIZE: usize = 67; //_108_864; // max payload size is 64MB
+
+// Required because currently actix has limited support for multipart request filtering.
+// See https://github.com/actix/actix-web/issues/693
 fn content_type_is_multipart(req: &HttpRequest<AppState>) -> bool {
     match req.headers().get(http::header::CONTENT_TYPE) {
         Some(t) => match t.to_str() {
@@ -25,7 +29,7 @@ fn content_type_is_multipart(req: &HttpRequest<AppState>) -> bool {
 pub fn handle_multipart(req: &HttpRequest<AppState>) -> FutureResponse<HttpResponse> {
     if content_type_is_multipart(req) {
         log::info!("multipart/form-data");
-        let db = req.state().db.clone();
+        let db = req.state().db_actor.clone();
         Box::new(
             req.multipart()
                 .map_err(actix_web::error::ErrorInternalServerError)
@@ -43,17 +47,6 @@ pub fn handle_multipart(req: &HttpRequest<AppState>) -> FutureResponse<HttpRespo
             "Content-Type must be either application/json or multipart/form-data",
         )))
     }
-
-    /*
-    HttpResponse::Created().json(save(
-        req.state(),
-        PictureNew {
-            name: "1",
-            image: "2",
-            description: None,
-        },
-    ))
-    */
 }
 
 fn handle_multipart_item(
@@ -97,6 +90,25 @@ fn handle_multipart_item(
     }
 }
 
-pub fn handle_json() -> HttpResponse {
-    unimplemented!()
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+enum Parced {
+    Url { name: String, url: String },
+    Base64 { name: String, base64: String },
+}
+
+pub fn handle_json(
+    req: &HttpRequest<AppState>,
+) -> Box<Future<Item = HttpResponse, Error = actix_web::Error>> {
+    log::info!("application/json");
+    let db = req.state().db_actor.clone();
+    Box::new(
+        req.json()
+            .limit(MAX_SIZE)
+            .map_err(|_| error::ErrorBadRequest("Payload size should be less than 64MB"))
+            .and_then(|json: Parced| {
+                log::info!("model: {:?}", json);
+                Ok(HttpResponse::Ok().json(json))
+            }),
+    )
 }

@@ -11,7 +11,7 @@ base64 = "*"
 bytes = "*"
 chrono = { version = "*", features = ["serde"] }
 clap  = { version = "*", features = ["yaml"] }
-diesel = { version = "*", features = ["postgres", "chrono", "r2d2"] }
+diesel = { version = "*", features = ["postgres", "chrono", "r2d2", "uuid"] }
 futures = "*"
 listenfd = "*"
 log = "*"
@@ -19,3 +19,4 @@ serde = "*"
 serde_derive = "*"
 serde_json = "*"
 stderrlog = "*"
+uuid = { version = "^0.6", features = ["serde", "v4"] }

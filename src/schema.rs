@@ -1,6 +1,6 @@
 table! {
     pictures (id) {
-        id -> Int8,
+        id -> Uuid,
         name -> Text,
         image -> Text,
         created_at -> Timestamp,

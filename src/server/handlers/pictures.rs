@@ -1,5 +1,5 @@
 use crate::db::{DbExecutor, PictureCreate};
-use crate::models::Picture;
+use crate::models::PictureBrief;
 use crate::server::AppState;
 use actix::Addr;
 use actix_web::multipart::*;
@@ -25,6 +25,11 @@ fn content_type_is_multipart(req: &HttpRequest<AppState>) -> bool {
     }
 }
 
+enum Response {
+    Success(PictureBrief),
+    Fail(String),
+}
+
 /// Handler for POST /pictures
 pub fn handle_multipart(req: &HttpRequest<AppState>) -> FutureResponse<HttpResponse> {
     if content_type_is_multipart(req) {
@@ -36,15 +41,15 @@ pub fn handle_multipart(req: &HttpRequest<AppState>) -> FutureResponse<HttpRespo
                 .map(move |item| handle_multipart_item(db.clone(), item))
                 .flatten()
                 .collect()
-                .map(|pictures| HttpResponse::Created().json(pictures))
-                .map_err(|e| {
-                    log::error!("Failed: {}", e);
-                    e
+                .map(|pictures| HttpResponse::Ok().json(pictures))
+                .or_else(|e| {
+                    log::warn!("Unable to handle request: {}", e.as_response_error());
+                    future::ok(HttpResponse::from_error(e))
                 }),
         )
     } else {
         Box::new(futures::future::ok(HttpResponse::BadRequest().body(
-            "Content-Type must be either application/json or multipart/form-data",
+            "Request Content-Type must be either application/json or multipart/form-data",
         )))
     }
 }
@@ -52,11 +57,29 @@ pub fn handle_multipart(req: &HttpRequest<AppState>) -> FutureResponse<HttpRespo
 fn handle_multipart_item(
     db: Addr<DbExecutor>,
     item: MultipartItem<dev::Payload>,
-) -> Box<Stream<Item = Picture, Error = actix_web::Error>> {
+) -> Box<Stream<Item = PictureBrief, Error = actix_web::Error>> {
     log::info!("Handling multipart item");
     match item {
         MultipartItem::Field(field) => {
-            log::info!("Field");
+            let filename = if let Some(headers) = field.content_disposition() {
+                headers
+                    .get_filename()
+                    .or_else(|| headers.get_name())
+                    .map(|s| s.to_owned())
+            } else {
+                None
+            };
+
+            if field.content_type().type_() != mime::IMAGE {
+                return Box::new(
+                    future::err::<_, actix_web::Error>(actix_web::error::ErrorBadRequest(
+                        "Content-Type of multipart field is expected to be image",
+                    ))
+                    .into_stream(),
+                );
+            }
+            log::info!("{}", field.content_type().subtype());
+            let ext = field.content_type().subtype().as_str().to_owned();
 
             let result = field
                 .map_err(actix_web::error::ErrorInternalServerError)
@@ -67,7 +90,8 @@ fn handle_multipart_item(
                 })
                 .and_then(move |bytes_vec| {
                     db.send(PictureCreate {
-                        name: "1".to_owned(),
+                        name: filename,
+                        ext,
                         image: base64::encode(&bytes_vec),
                     })
                     .from_err()
@@ -79,14 +103,11 @@ fn handle_multipart_item(
 
             Box::new(result.into_stream())
         }
-        MultipartItem::Nested(mp) => {
-            log::info!("Nested");
-            Box::new(
-                mp.map_err(error::ErrorInternalServerError)
-                    .map(move |item| handle_multipart_item(db.clone(), item))
-                    .flatten(),
-            )
-        }
+        MultipartItem::Nested(mp) => Box::new(
+            mp.map_err(error::ErrorInternalServerError)
+                .map(move |item| handle_multipart_item(db.clone(), item))
+                .flatten(),
+        ),
     }
 }
 
@@ -101,7 +122,7 @@ pub fn handle_json(
     req: &HttpRequest<AppState>,
 ) -> Box<Future<Item = HttpResponse, Error = actix_web::Error>> {
     log::info!("application/json");
-    let db = req.state().db_actor.clone();
+    let _db = req.state().db_actor.clone();
     Box::new(
         req.json()
             .limit(MAX_SIZE)

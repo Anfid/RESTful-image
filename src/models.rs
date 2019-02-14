@@ -3,7 +3,7 @@ use crate::schema::pictures;
 use chrono::naive::NaiveDateTime;
 use uuid::Uuid;
 
-/// Picture entry model that has full representation of the picture.
+/// Picture model with all picture data.
 #[derive(Debug, Queryable, Serialize, Deserialize)]
 pub struct Picture {
     pub id: Uuid,
@@ -12,7 +12,15 @@ pub struct Picture {
     pub created_at: NaiveDateTime,
 }
 
-/// Picture entry model to insert new row into the database.
+/// Picture model without image data.
+#[derive(Debug, Queryable, Serialize, Deserialize)]
+pub struct PictureBrief {
+    pub id: Uuid,
+    pub name: String,
+    pub created_at: NaiveDateTime,
+}
+
+/// Insertable picture model.
 #[derive(Debug, Insertable)]
 #[table_name = "pictures"]
 pub struct PictureNew<'a> {
@@ -20,5 +28,3 @@ pub struct PictureNew<'a> {
     pub name: &'a str,
     pub image: &'a str,
 }
-
-// TODO: new models as needed

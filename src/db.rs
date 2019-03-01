@@ -3,7 +3,6 @@
 use crate::models::*;
 use crate::schema::*;
 use actix::prelude::*;
-use actix_web::{error, Error};
 use diesel::{
     pg::PgConnection,
     prelude::*,
@@ -27,12 +26,12 @@ pub struct PictureCreate {
 }
 
 impl Message for PictureCreate {
-    type Result = Result<PictureBrief, Error>;
+    type Result = Result<PictureBrief, String>;
 }
 
 /// Inserts picture into the database.
 impl Handler<PictureCreate> for DbExecutor {
-    type Result = Result<PictureBrief, Error>;
+    type Result = Result<PictureBrief, String>;
 
     fn handle(&mut self, msg: PictureCreate, _: &mut Self::Context) -> Self::Result {
         let uuid = uuid::Uuid::new_v4();
@@ -53,7 +52,7 @@ impl Handler<PictureCreate> for DbExecutor {
             .execute(&self.pool.get().unwrap())
             .map_err(|e| {
                 log::error!("Error saving image: {}", e);
-                error::ErrorInternalServerError("Could not save the image")
+                String::from("Could not save the image")
             })
             .and_then(|_| {
                 pictures::table
@@ -61,8 +60,8 @@ impl Handler<PictureCreate> for DbExecutor {
                     .select((pictures::id, pictures::name, pictures::created_at))
                     .first(&self.pool.get().unwrap())
                     .map_err(|e| {
-                        log::error!("Error saving image: {}", e);
-                        error::ErrorInternalServerError("Could not load the image")
+                        log::error!("Error loading image: {}", e);
+                        String::from("Could not load the image")
                     })
             })
     }

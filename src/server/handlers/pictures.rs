@@ -6,7 +6,6 @@ use actix_web::multipart::*;
 use actix_web::{dev, error, http, FutureResponse, HttpMessage, HttpRequest, HttpResponse};
 use futures::future::Future;
 use futures::*;
-use serde_json;
 
 const MAX_SIZE: usize = 67; //_108_864; // max payload size is 64MB
 
@@ -137,9 +136,17 @@ pub fn handle_json(
             .and_then(|json: Vec<Parced>| {
                 log::info!("model: {:?}", json);
 
-                json.iter()
-                    .map(move |item| handle_json_item(db.clone(), item))
-                    .map(|a| a.map(UploadResponse::Success)); // TODO: Any better solutions?
+                stream::futures_ordered(
+                    json.into_iter()
+                        .map(move |item| handle_json_item(db.clone(), &item)),
+                )
+                .map(UploadResponse::Success)
+                .or_else(|e| {
+                    log::warn!("Unable to handle request: {}", e);
+                    future::ok::<_, String>(UploadResponse::Fail(UploadError { message: e }))
+                })
+                .collect()
+                .map(|result| HttpResponse::Ok().json(result));
 
                 Ok(HttpResponse::Ok().json(json))
             }),

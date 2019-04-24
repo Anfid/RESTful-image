@@ -1,16 +1,18 @@
-use crate::db::{DbExecutor, PictureCreate};
-use crate::models::PictureBrief;
-use crate::server::AppState;
+use crate::{
+    db::{DbExecutor, PictureCreate},
+    models::PictureBrief,
+    server::AppState,
+};
 use actix::Addr;
-use actix_web::multipart::*;
-use actix_web::{dev, error, http, FutureResponse, HttpMessage, HttpRequest, HttpResponse};
-use futures::future::Future;
-use futures::*;
+use actix_web::{
+    dev, error, http, multipart::*, FutureResponse, HttpMessage, HttpRequest, HttpResponse,
+};
+use futures::{future::Future, *};
 
-const MAX_SIZE: usize = 67; //_108_864; // max payload size is 64MB
+const MAX_SIZE: usize = 67_108_864; // max payload size is 64MB
 
-// Required because currently actix has limited support for multipart request filtering.
-// See https://github.com/actix/actix-web/issues/693
+// Required because currently actix has limited support for multipart request
+// filtering. See https://github.com/actix/actix-web/issues/693
 fn content_type_is_multipart(req: &HttpRequest<AppState>) -> bool {
     match req.headers().get(http::header::CONTENT_TYPE) {
         Some(t) => match t.to_str() {
@@ -18,7 +20,7 @@ fn content_type_is_multipart(req: &HttpRequest<AppState>) -> bool {
             Err(e) => {
                 log::error!("Error reading header: {}", e);
                 false
-            }
+            },
         },
         None => false,
     }
@@ -108,7 +110,7 @@ fn handle_multipart_item(
                 });
 
             Box::new(result.into_stream())
-        }
+        },
         MultipartItem::Nested(mp) => Box::new(
             mp.map_err(|e| e.to_string())
                 .map(move |item| handle_multipart_item(db.clone(), item))
@@ -132,7 +134,12 @@ pub fn handle_json(
     Box::new(
         req.json()
             .limit(MAX_SIZE)
-            .map_err(|_| error::ErrorBadRequest("Payload size should be less than 64MB"))
+            .map_err(|_| {
+                error::ErrorBadRequest(format!(
+                    "Payload size should be less than {} MB",
+                    MAX_SIZE / 1024 / 1024
+                ))
+            })
             .and_then(|json: Vec<Parced>| {
                 log::info!("model: {:?}", json);
 
@@ -143,12 +150,12 @@ pub fn handle_json(
                 .map(UploadResponse::Success)
                 .or_else(|e| {
                     log::warn!("Unable to handle request: {}", e);
-                    future::ok::<_, String>(UploadResponse::Fail(UploadError { message: e }))
+                    future::ok::<_, actix_web::Error>(UploadResponse::Fail(UploadError {
+                        message: e,
+                    }))
                 })
                 .collect()
-                .map(|result| HttpResponse::Ok().json(result));
-
-                Ok(HttpResponse::Ok().json(json))
+                .map(|result| HttpResponse::Ok().json(result))
             }),
     )
 }

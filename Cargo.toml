@@ -1,5 +1,5 @@
 [package]
-name = "RESTful-image"
+name = "restful-image"
 version = "0.1.0"
 authors = ["Mikhail Pogretskiy <mikhail.pogretskiy@gmail.com>"]
 edition = "2018"

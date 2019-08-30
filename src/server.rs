@@ -10,8 +10,17 @@ pub struct AppState {
 }
 
 fn index(_req: &HttpRequest<AppState>) -> &'static str {
-    // TODO: describe API
-    "Hello world"
+    r#"Brief API description
+
+GET / - see this page
+POST /pictures <multipart>
+POST /pictures <json>
+
+Allowed json format:
+["name": "<name>", "base64": "<base64>", ...]
+["name": "<name>", "url": "<url>", ...]
+"#
+
 }
 
 pub fn serve() {

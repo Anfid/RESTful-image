@@ -165,7 +165,7 @@ fn handle_json_item(
     item: &Parced,
 ) -> Box<Future<Item = PictureBrief, Error = String>> {
     let res = match item {
-        Parced::Url { name, url } => unimplemented!(),
+        Parced::Url { name: _, url: _ } => unimplemented!(),
         Parced::Base64 { name, base64 } => db
             .send(PictureCreate {
                 name: Some(name.to_owned()),

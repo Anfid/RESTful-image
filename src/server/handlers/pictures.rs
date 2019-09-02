@@ -4,15 +4,18 @@ use crate::{
     server::AppState,
 };
 use actix::Addr;
-use actix_web::{
-    dev, error, http, multipart::*, FutureResponse, HttpMessage, HttpRequest, HttpResponse,
+use actix_multipart::{Field, Multipart};
+use actix_web::{dev, error, http, web, Error, HttpMessage, HttpRequest, HttpResponse};
+use futures::{
+    future::{Either, Future},
+    *,
 };
-use futures::{future::Future, *};
 
 const MAX_SIZE: usize = 67_108_864; // max payload size is 64MB
 
 // Required because currently actix has limited support for multipart request
 // filtering. See https://github.com/actix/actix-web/issues/693
+/*
 fn content_type_is_multipart(req: &HttpRequest<AppState>) -> bool {
     match req.headers().get(http::header::CONTENT_TYPE) {
         Some(t) => match t.to_str() {
@@ -20,11 +23,12 @@ fn content_type_is_multipart(req: &HttpRequest<AppState>) -> bool {
             Err(e) => {
                 log::error!("Error reading header: {}", e);
                 false
-            },
+            }
         },
         None => false,
     }
 }
+*/
 
 #[derive(Serialize)]
 enum UploadResponse {
@@ -38,87 +42,72 @@ struct UploadError {
 }
 
 /// Handler for POST /pictures
-pub fn handle_multipart(req: &HttpRequest<AppState>) -> FutureResponse<HttpResponse> {
-    if content_type_is_multipart(req) {
-        log::info!("multipart/form-data");
-        let db = req.state().db_actor.clone();
-        Box::new(
-            req.multipart()
-                .map_err(|e| e.to_string())
-                .map(move |item| handle_multipart_item(db.clone(), item))
-                .flatten()
-                .map(UploadResponse::Success)
-                .or_else(|e| {
-                    log::warn!("Unable to handle request: {}", e);
-                    future::ok(UploadResponse::Fail(UploadError { message: e }))
-                })
-                .collect()
-                .map(|result| HttpResponse::Ok().json(result)),
-        )
-    } else {
-        Box::new(futures::future::ok(HttpResponse::BadRequest().body(
-            "Request Content-Type must be either application/json or multipart/form-data",
-        )))
-    }
+pub fn handle_multipart(
+    multipart: Multipart,
+    db: web::Data<Addr<DbExecutor>>,
+) -> impl Future<Item = HttpResponse, Error = Error> {
+    multipart
+        .map_err(error::ErrorInternalServerError)
+        .map(move |item| handle_multipart_item((*db).clone(), item).into_stream())
+        .flatten()
+        .map(UploadResponse::Success)
+        .or_else(|e| {
+            log::warn!("Unable to handle request: {}", e);
+            future::ok(UploadResponse::Fail(UploadError {
+                message: "tmp".to_owned(),
+            }))
+        })
+        .collect()
+        .map(|result| HttpResponse::Ok().json(result))
 }
 
 fn handle_multipart_item(
     db: Addr<DbExecutor>,
-    item: MultipartItem<dev::Payload>,
-) -> Box<Stream<Item = PictureBrief, Error = String>> {
+    field: Field,
+) -> impl Future<Item = PictureBrief, Error = Error> {
     log::info!("Handling multipart item");
-    match item {
-        MultipartItem::Field(field) => {
-            let filename = if let Some(headers) = field.content_disposition() {
-                headers
-                    .get_filename()
-                    .or_else(|| headers.get_name())
-                    .map(|s| s.to_owned())
-            } else {
-                None
-            };
 
-            if field.content_type().type_() != mime::IMAGE {
-                return Box::new(
-                    future::err::<_, String>(String::from(
-                        "Content-Type of multipart field is expected to be image",
-                    ))
-                    .into_stream(),
-                );
-            }
-            log::info!("{}", field.content_type().subtype());
-            let ext = field.content_type().subtype().as_str().to_owned();
+    let filename = if let Some(headers) = field.content_disposition() {
+        headers
+            .get_filename()
+            .or_else(|| headers.get_name())
+            .map(|s| s.to_owned())
+    } else {
+        None
+    };
 
-            let result = field
-                .map_err(|e| e.to_string())
-                .fold(Vec::new(), |acc, bytes| {
-                    let mut acc = acc;
-                    acc.extend(&bytes);
-                    future::ok::<_, String>(acc)
-                })
-                .and_then(move |bytes_vec| {
-                    db.send(PictureCreate {
-                        name: filename,
-                        ext,
-                        image: base64::encode(&bytes_vec),
-                    })
-                    .map_err(|_| String::from("Internal server error"))
-                    .and_then(|send_result| match send_result {
-                        Ok(picture) => future::ok(picture),
-                        Err(err) => future::err(err),
-                    })
-                });
-
-            Box::new(result.into_stream())
-        },
-        MultipartItem::Nested(mp) => Box::new(
-            mp.map_err(|e| e.to_string())
-                .map(move |item| handle_multipart_item(db.clone(), item))
-                .flatten(),
-        ),
+    if field.content_type().type_() != mime::IMAGE {
+        return Either::A(future::err::<_, _>(error::ErrorInternalServerError(
+            "Content-Type of multipart field is expected to be image",
+        )));
     }
+    log::info!("{}", field.content_type().subtype());
+    let ext = field.content_type().subtype().as_str().to_owned();
+
+    let result = field
+        .map_err(error::ErrorInternalServerError)
+        .fold(Vec::new(), |acc, bytes| {
+            let mut acc = acc;
+            acc.extend(&bytes);
+            future::ok::<_, Error>(acc)
+        })
+        .and_then(move |bytes_vec| {
+            db.send(PictureCreate {
+                name: filename,
+                ext,
+                image: base64::encode(&bytes_vec),
+            })
+            .map_err(|_| error::ErrorInternalServerError("Internal server error"))
+            .and_then(|send_result| match send_result {
+                Ok(picture) => future::ok(picture),
+                Err(err) => future::err(error::ErrorInternalServerError(err)),
+            })
+        });
+
+    Either::B(result)
 }
 
+/*
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 enum Parced {
@@ -180,3 +169,4 @@ fn handle_json_item(
     };
     Box::new(res)
 }
+*/

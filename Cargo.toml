@@ -5,8 +5,9 @@ authors = ["Mikhail Pogretskiy <mikhail.pogretskiy@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-actix = "0.7.9"
-actix-web = "0.7.19"
+actix = "0.8"
+actix-web = "1.0"
+actix-multipart = "*"
 base64 = "*"
 bytes = "*"
 chrono = { version = "*", features = ["serde"] }
